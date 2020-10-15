@@ -24,8 +24,8 @@ class HomingEncoder
     private:
         HomingEncoderState state;
     
-    public:        
-        void init(unsigned int encoderPin1, unsigned int encoderPin2, unsigned int breakerPin )
+    public:     
+        template <int N> void init(  unsigned int encoderPin1, unsigned int encoderPin2, unsigned int breakerPin )
         {
             state.encoderPin1 = encoderPin1;
             state.encoderPin2 = encoderPin2;
@@ -33,15 +33,15 @@ class HomingEncoder
             state.count_encoder = 0;
             state.count_homing = 0;    
 
-            if ( encoderCount >= MAX_ENCODERS_SUPPORTED )
+            if ( N >= MAX_ENCODERS_SUPPORTED )
                 Serial << "ERROR: More encoders registered than are supported." << endl;
-            stateList[encoderCount] = &state;
+            stateList[N] = &state;
 
             pinMode(encoderPin1, INPUT);
             pinMode(encoderPin2, INPUT);
             pinMode(breakerPin, INPUT);
 
-            attach( encoderCount, encoderPin1, encoderPin2, breakerPin );
+            attach<N>( encoderPin1, encoderPin2, breakerPin );
         }
 
         void printStatus()
@@ -52,8 +52,7 @@ class HomingEncoder
         }
     
     public:    
-        static HomingEncoderState * stateList[MAX_ENCODERS_SUPPORTED];
-        static int encoderCount;
+        static HomingEncoderState * stateList[MAX_ENCODERS_SUPPORTED];        
     
     public:
         static void update( HomingEncoderState* state )
@@ -66,23 +65,21 @@ class HomingEncoder
             state->count_homing++;
         }
 
-        static void attach ( unsigned int count, unsigned int encoderPin1,
+        template<int N> static void attach ( unsigned int encoderPin1,
             unsigned int encoderPin2, unsigned int breakerPin )
-        {
-            switch( count ) {
-                case 0:
-                    attachInterrupt(digitalPinToInterrupt(encoderPin1), isr0, CHANGE );
-                    attachInterrupt(digitalPinToInterrupt(encoderPin2), isr0, CHANGE );
-                    attachInterrupt(digitalPinToInterrupt(breakerPin), isr0_homing, FALLING );
-                    break;
-                default:
-                    Serial << "ERROR: Tried to register more encoders than are supported" << endl;            
+        {         
+            if ( N >= MAX_ENCODERS_SUPPORTED )
+                Serial << "ERROR: Tried to register more encoders than supported. Ignoring." << endl;
+            else {
+                attachInterrupt(digitalPinToInterrupt(encoderPin1), isr<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(encoderPin2), isr<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(breakerPin), isr_homing<N>, FALLING );                     
             }
         }
 
     public:
-        static void isr0(void) { update(stateList[0]); }
-        static void isr0_homing(void) { home(stateList[0]); }
+        template<int N> static void isr(void) { update(stateList[N]); }
+        template<int N> static void isr_homing(void) { home(stateList[N]); }
 
 };
 
