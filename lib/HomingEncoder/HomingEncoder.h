@@ -16,7 +16,8 @@ struct HomingEncoderState {
     int breakerPin;
 
     int count_encoder;
-    int count_homing;    
+    int count_homing;  
+    int last_count_at_homing;  
 };
 
 class HomingEncoder
@@ -32,6 +33,7 @@ class HomingEncoder
             state.breakerPin = breakerPin;
             state.count_encoder = 0;
             state.count_homing = 0;    
+            state.last_count_at_homing = 0;
 
             if ( N >= MAX_ENCODERS_SUPPORTED )
                 Serial << "ERROR: More encoders registered than are supported." << endl;
@@ -47,7 +49,8 @@ class HomingEncoder
         void printStatus()
         {
             Serial << "Count Encoder: " << stateList[0]->count_encoder << 
-                " Count Homing: " << stateList[0]->count_homing << endl;    
+                " Count Homing: " << stateList[0]->count_homing << 
+                " Count at last homing: " << stateList[0]->last_count_at_homing << endl;    
 
         }
     
@@ -55,15 +58,6 @@ class HomingEncoder
         static HomingEncoderState * stateList[MAX_ENCODERS_SUPPORTED];        
     
     public:
-        static void update( HomingEncoderState* state )
-        {
-            state->count_encoder++;
-        }
-
-        static void home( HomingEncoderState* state )
-        {
-            state->count_homing++;
-        }
 
         template<int N> static void attach ( unsigned int encoderPin1,
             unsigned int encoderPin2, unsigned int breakerPin )
@@ -71,15 +65,26 @@ class HomingEncoder
             if ( N >= MAX_ENCODERS_SUPPORTED )
                 Serial << "ERROR: Tried to register more encoders than supported. Ignoring." << endl;
             else {
-                attachInterrupt(digitalPinToInterrupt(encoderPin1), isr<N>, CHANGE );
-                attachInterrupt(digitalPinToInterrupt(encoderPin2), isr<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(encoderPin1), isr_encoder<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(encoderPin2), isr_encoder<N>, CHANGE );
                 attachInterrupt(digitalPinToInterrupt(breakerPin), isr_homing<N>, FALLING );                     
             }
         }
 
     public:
-        template<int N> static void isr(void) { update(stateList[N]); }
-        template<int N> static void isr_homing(void) { home(stateList[N]); }
+        template<int N> static void isr_encoder(void) 
+        {
+            HomingEncoderState * state = stateList[N];
+            state->count_encoder++;
+        }
+
+        template<int N> static void isr_homing(void) 
+        { 
+            HomingEncoderState * state = stateList[N];
+            state->count_homing++;            
+            state->last_count_at_homing  = state->count_encoder;
+            state->count_encoder = 0;
+        }
 
 };
 
