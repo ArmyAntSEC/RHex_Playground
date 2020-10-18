@@ -4,16 +4,36 @@
 #include <Arduino.h>
 #include <Streaming.h>
 
+#define IO_REG_TYPE			uint32_t
+#define PIN_TO_BASEREG(pin)             (portInputRegister(digitalPinToPort(pin)))
+#define PIN_TO_BITMASK(pin)             (digitalPinToBitMask(pin))
+#define DIRECT_PIN_READ(base, mask)     (((*(base)) & (mask)) ? 1 : 0)
+
 #define MAX_ENCODERS_SUPPORTED 6
 
 #define ENCODER_LEFT_PIN_1 2
 #define ENCODER_LEFT_PIN_2 3
 #define BREAKER_LEFT_PIN A0
 
+#define LOG Serial << "HomingEncoder: "
+
 struct HomingEncoderState {
     int encoderPin1;
     int encoderPin2;
     int breakerPin;
+
+    volatile IO_REG_TYPE * encoderPin1_register;
+	volatile IO_REG_TYPE * encoderPin2_register;
+    volatile IO_REG_TYPE * breakerPin_register;
+
+	IO_REG_TYPE            encoderPin1_bitmask;
+	IO_REG_TYPE            encoderPin2_bitmask;
+    IO_REG_TYPE            breakerPin_bitmask;
+
+	uint8_t                encoder_state;
+    bool moving_forward;
+
+    long int position;
 
     int count_encoder;
     int count_homing;  
@@ -28,30 +48,55 @@ class HomingEncoder
     public:     
         template <int N> void init(  unsigned int encoderPin1, unsigned int encoderPin2, unsigned int breakerPin )
         {
+            pinMode(encoderPin1, INPUT_PULLUP);
+            pinMode(encoderPin2, INPUT_PULLUP);
+            pinMode(breakerPin, INPUT_PULLUP);
+
             state.encoderPin1 = encoderPin1;
             state.encoderPin2 = encoderPin2;
             state.breakerPin = breakerPin;
             state.count_encoder = 0;
             state.count_homing = 0;    
             state.last_count_at_homing = 0;
+            state.position = 0;
+            state.moving_forward = true;
+
+            state.encoderPin1_register = PIN_TO_BASEREG(encoderPin1);
+            state.encoderPin2_register = PIN_TO_BASEREG(encoderPin2);
+            state.breakerPin_register = PIN_TO_BASEREG(breakerPin);
+
+            state.encoderPin1_bitmask = PIN_TO_BITMASK(encoderPin1);
+            state.encoderPin2_bitmask = PIN_TO_BITMASK(encoderPin2);
+            state.breakerPin_bitmask = PIN_TO_BITMASK(breakerPin);
+
+            // allow time for a passive R-C filter to charge
+		    // through the pullup resistors, before reading
+		    // the initial state
+		    delayMicroseconds(2000);
+
+            uint8_t s = 0;
+		    if (DIRECT_PIN_READ(state.encoderPin1_register, state.encoderPin1_bitmask)) s |= 1;
+		    if (DIRECT_PIN_READ(state.encoderPin1_register, state.encoderPin1_bitmask)) s |= 2;
+		    
+            state.encoder_state = s;
+
+            LOG << "Starting encoder state: " << state.encoder_state << endl;
 
             if ( N >= MAX_ENCODERS_SUPPORTED )
-                Serial << "ERROR: More encoders registered than are supported." << endl;
+                LOG << "ERROR: More encoders registered than are supported." << endl;
             stateList[N] = &state;
-
-            pinMode(encoderPin1, INPUT);
-            pinMode(encoderPin2, INPUT);
-            pinMode(breakerPin, INPUT);
 
             attach<N>( encoderPin1, encoderPin2, breakerPin );
         }
 
-        void printStatus()
+        void printStatus()        
         {
-            Serial << "Count Encoder: " << stateList[0]->count_encoder << 
+            LOG << " Position: " << -stateList[0]->position <<    
+                " Count Encoder: " << stateList[0]->count_encoder << 
                 " Count Homing: " << stateList[0]->count_homing << 
-                " Count at last homing: " << stateList[0]->last_count_at_homing << endl;    
-
+                " Count at last homing: " << stateList[0]->last_count_at_homing << 
+                " Encoder state: " << stateList[0]->encoder_state << 
+                endl;                
         }
     
     public:    
@@ -75,17 +120,56 @@ class HomingEncoder
         template<int N> static void isr_encoder(void) 
         {
             HomingEncoderState * state = stateList[N];
+
+            uint8_t p1val = DIRECT_PIN_READ(state->encoderPin1_register, 
+                state->encoderPin1_bitmask );
+		    uint8_t p2val = DIRECT_PIN_READ(state->encoderPin2_register,
+                state->encoderPin2_bitmask );
+		    
+            uint8_t encoder_state = state->encoder_state & 3;
+		    if (p1val) encoder_state |= 4;
+		    if (p2val) encoder_state |= 8;
+		    state->encoder_state = (encoder_state >> 2);
+
             state->count_encoder++;
+
+            switch (encoder_state) {
+                case 1: case 7: case 8: case 14:
+                    state->position++;
+                    state->moving_forward = true;
+                    break;
+                case 2: case 4: case 11: case 13:
+                    state->position--;
+                    state->moving_forward = false;
+                    break;
+                case 3: case 12:
+                    state->position += 2;
+                    state->moving_forward = true;
+                    break;
+                case 6: case 9:
+                    state->position -= 2;
+                    state->moving_forward = false;
+                    break;
+            }                                    
         }
 
         template<int N> static void isr_homing(void) 
         { 
             HomingEncoderState * state = stateList[N];
-            state->count_homing++;            
-            state->last_count_at_homing  = state->count_encoder;
-            state->count_encoder = 0;
+            
+            uint8_t breaker_val = DIRECT_PIN_READ(state->breakerPin_register, 
+                state->breakerPin_bitmask );                  
+            
+            //Depending on direction, we will trigger either on rising or falling. 
+            //We want to make sure we allways trigger on the same edge regardless of direction
+            // DOES NOT WORK FOR SOME REASON!!!
+            if ( state->moving_forward ^ breaker_val ) {
+                state->count_homing++;            
+                state->last_count_at_homing = state->count_encoder;
+                state->count_encoder = 0;
+                state->position = 0;
+            }
         }
-
 };
 
 #endif
