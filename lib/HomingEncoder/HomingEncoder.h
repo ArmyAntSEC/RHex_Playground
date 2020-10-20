@@ -1,3 +1,25 @@
+/* Homing Encoder Library for Arduino Due
+ * Copyright 2020 Daniel Armyr
+ * 
+ * The core algorithm, some macros and lines of code were taken from:
+ * Encoder Library, for measuring quadrature encoded signals
+ * http://www.pjrc.com/teensy/td_libs_Encoder.html
+ * Copyright (c) 2011,2013 PJRC.COM, LLC - Paul Stoffregen <paul@pjrc.com>
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
 #ifndef _HOMINGENCODER_H_
 #define _HOMINGENCODER_H_
 
@@ -46,7 +68,9 @@ class HomingEncoder
         HomingEncoderState state;
     
     public:     
-        template <int N> void init(  unsigned int encoderPin1, unsigned int encoderPin2, unsigned int breakerPin )
+        static HomingEncoderState * stateList[MAX_ENCODERS_SUPPORTED];        
+
+        template <int N> void init( unsigned int encoderPin1, unsigned int encoderPin2, unsigned int breakerPin )
         {
             pinMode(encoderPin1, INPUT_PULLUP);
             pinMode(encoderPin2, INPUT_PULLUP);
@@ -82,41 +106,28 @@ class HomingEncoder
 
             LOG << "Starting encoder state: " << state.encoder_state << endl;
 
-            if ( N >= MAX_ENCODERS_SUPPORTED )
+            if ( N >= MAX_ENCODERS_SUPPORTED ) {
                 LOG << "ERROR: More encoders registered than are supported." << endl;
-            stateList[N] = &state;
+            } else {
+                stateList[N] = &state;
+                
+                attachInterrupt(digitalPinToInterrupt(encoderPin1), isr_encoder<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(encoderPin2), isr_encoder<N>, CHANGE );
+                attachInterrupt(digitalPinToInterrupt(breakerPin), isr_homing<N>, CHANGE );                     
 
-            attach<N>( encoderPin1, encoderPin2, breakerPin );
+            }
         }
 
         void printStatus()        
         {
-            LOG << " Position: " << -stateList[0]->position <<    
+            LOG << " Position: " << stateList[0]->position <<    
                 " Count Encoder: " << stateList[0]->count_encoder << 
                 " Count Homing: " << stateList[0]->count_homing << 
                 " Count at last homing: " << stateList[0]->last_count_at_homing << 
-                " Encoder state: " << stateList[0]->encoder_state << 
+                " Direction: " << stateList[0]->moving_forward <<                 
                 endl;                
         }
     
-    public:    
-        static HomingEncoderState * stateList[MAX_ENCODERS_SUPPORTED];        
-    
-    public:
-
-        template<int N> static void attach ( unsigned int encoderPin1,
-            unsigned int encoderPin2, unsigned int breakerPin )
-        {         
-            if ( N >= MAX_ENCODERS_SUPPORTED )
-                Serial << "ERROR: Tried to register more encoders than supported. Ignoring." << endl;
-            else {
-                attachInterrupt(digitalPinToInterrupt(encoderPin1), isr_encoder<N>, CHANGE );
-                attachInterrupt(digitalPinToInterrupt(encoderPin2), isr_encoder<N>, CHANGE );
-                attachInterrupt(digitalPinToInterrupt(breakerPin), isr_homing<N>, FALLING );                     
-            }
-        }
-
-    public:
         template<int N> static void isr_encoder(void) 
         {
             HomingEncoderState * state = stateList[N];
@@ -135,20 +146,20 @@ class HomingEncoder
 
             switch (encoder_state) {
                 case 1: case 7: case 8: case 14:
-                    state->position++;
-                    state->moving_forward = true;
-                    break;
-                case 2: case 4: case 11: case 13:
                     state->position--;
                     state->moving_forward = false;
                     break;
-                case 3: case 12:
-                    state->position += 2;
+                case 2: case 4: case 11: case 13:
+                    state->position++;
                     state->moving_forward = true;
                     break;
-                case 6: case 9:
+                case 3: case 12:
                     state->position -= 2;
                     state->moving_forward = false;
+                    break;
+                case 6: case 9:
+                    state->position += 2;
+                    state->moving_forward = true;
                     break;
             }                                    
         }
@@ -159,16 +170,15 @@ class HomingEncoder
             
             uint8_t breaker_val = DIRECT_PIN_READ(state->breakerPin_register, 
                 state->breakerPin_bitmask );                  
-            
+                    
             //Depending on direction, we will trigger either on rising or falling. 
             //We want to make sure we allways trigger on the same edge regardless of direction
-            // DOES NOT WORK FOR SOME REASON!!!
             if ( state->moving_forward ^ breaker_val ) {
                 state->count_homing++;            
                 state->last_count_at_homing = state->count_encoder;
                 state->count_encoder = 0;
                 state->position = 0;
-            }
+            }            
         }
 };
 

@@ -18,7 +18,7 @@ HomingEncoder hEnc;
 pwm<pwm_pin::PWML7_PC24> driverLeftPinPWM;
 
 unsigned long int start_time = 0;
-unsigned int driver_pwm = 0;
+unsigned int driver_pwm = 1500;
 
 void setup() {
 
@@ -33,8 +33,8 @@ void setup() {
   pinMode( DRIVER_LEFT_PIN_2, OUTPUT );
   pinMode( DRIVER_LEFT_PIN_PWM, OUTPUT );
 
-  digitalWrite( DRIVER_LEFT_PIN_1, HIGH );
-  digitalWrite( DRIVER_LEFT_PIN_2, LOW );
+  digitalWrite( DRIVER_LEFT_PIN_1, LOW );
+  digitalWrite( DRIVER_LEFT_PIN_2, HIGH );
   if ( driverLeftPinPWM.start(5000,driver_pwm) )
     Serial << "PWM started successfully." << endl;
   else
@@ -44,10 +44,10 @@ void setup() {
 bool has_stopped = false;
 void loop() {
   if ( millis() < start_time + 10*1000 ) {
-    delay(500);
-    driver_pwm += 250;
-    driverLeftPinPWM.set_duty(driver_pwm);
-    Serial << "PWM: " << driver_pwm << endl;
+    delay(1000);
+    //driver_pwm += 250;
+    //driverLeftPinPWM.set_duty(driver_pwm);
+    //Serial << "PWM: " << driver_pwm << endl;
     hEnc.printStatus();
   } else if ( !has_stopped ) {
     driverLeftPinPWM.stop();
