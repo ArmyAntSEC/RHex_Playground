@@ -48,7 +48,7 @@ void loop() {
     //driver_pwm += 250;
     //driverLeftPinPWM.set_duty(driver_pwm);
     //Serial << "PWM: " << driver_pwm << endl;
-    Serial << "Position: " << hEnc.read() << endl;
+    Serial << "Position: " << hEnc.read() << " Is Homed? " << hEnc.isHomed() << endl;
   } else if ( !has_stopped ) {
     driverLeftPinPWM.stop();
     Serial << "Stopped" << endl;
