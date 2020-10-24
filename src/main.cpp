@@ -44,11 +44,11 @@ void setup() {
 bool has_stopped = false;
 void loop() {
   if ( millis() < start_time + 10*1000 ) {
-    delay(1000);
+    delay(200);
     //driver_pwm += 250;
     //driverLeftPinPWM.set_duty(driver_pwm);
     //Serial << "PWM: " << driver_pwm << endl;
-    hEnc.printStatus();
+    Serial << "Position: " << hEnc.read() << endl;
   } else if ( !has_stopped ) {
     driverLeftPinPWM.stop();
     Serial << "Stopped" << endl;
